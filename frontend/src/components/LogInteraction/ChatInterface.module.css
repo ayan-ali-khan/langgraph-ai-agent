@@ -1,0 +1,205 @@
+.container {
+  background: white;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  height: 600px;
+  overflow: hidden;
+}
+
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 48px;
+  text-align: center;
+  gap: 12px;
+}
+
+.welcomeIcon {
+  font-size: 32px;
+  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 4px;
+}
+
+.welcomeTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-neutral-900);
+  letter-spacing: -0.3px;
+}
+
+.welcomeSubtitle {
+  font-size: 13.5px;
+  color: var(--color-neutral-500);
+  max-width: 460px;
+  line-height: 1.6;
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 540px;
+}
+
+.suggestion {
+  text-align: left;
+  padding: 10px 16px;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  transition: all 0.12s;
+  line-height: 1.4;
+}
+
+.suggestion:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.typingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #EDE9FE, #F5F3FF);
+  border-radius: var(--radius-md);
+  width: fit-content;
+  max-width: 200px;
+}
+
+.typingDots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.typingDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7C3AED;
+  animation: bounce 1.2s infinite;
+}
+
+.typingDots span:nth-child(2) { animation-delay: 0.2s; }
+.typingDots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.4; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
+
+.typingText {
+  font-size: 12px;
+  color: #7C3AED;
+  font-weight: 500;
+}
+
+.inputArea {
+  border-top: 1px solid var(--color-neutral-100);
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clearBtn {
+  align-self: flex-start;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-neutral-400);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.clearBtn:hover { color: var(--color-neutral-600); }
+
+.inputWrapper {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  color: var(--color-neutral-800);
+  resize: none;
+  outline: none;
+  line-height: 1.5;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+.input:disabled {
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-400);
+}
+
+.sendBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.sendBtn:hover:not(:disabled) { background: var(--color-primary-dark); }
+.sendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.hint {
+  font-size: 11px;
+  color: var(--color-neutral-400);
+  text-align: right;
+}
