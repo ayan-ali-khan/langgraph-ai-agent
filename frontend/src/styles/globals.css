@@ -41,7 +41,7 @@ html, body, #root {
   font-family: var(--font-family);
   font-size: 14px;
   color: var(--color-neutral-800);
-  background: var(--color-neutral-50);
+  background: #ffffff;
   -webkit-font-smoothing: antialiased;
 }
 

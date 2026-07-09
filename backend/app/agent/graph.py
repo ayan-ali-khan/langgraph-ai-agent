@@ -13,6 +13,7 @@ from langgraph.prebuilt import ToolNode
 from app.agent.state import AgentState
 from app.agent.tools import ALL_TOOLS
 from app.config import get_settings
+from typing import Literal
 import json
 import logging
 
@@ -63,12 +64,12 @@ def agent_node(state: AgentState) -> AgentState:
     return {"messages": [response]}
 
 
-def should_continue(state: AgentState) -> str:
+def should_continue(state: AgentState) -> Literal["tools", "__end__"]:
     """Route: if last message has tool calls → run tools, else → end."""
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "tools"
-    return END
+    return "__end__"
 
 
 def process_tool_results(state: AgentState) -> AgentState:
@@ -111,7 +112,11 @@ def build_graph():
     graph.add_node("process_results", process_tool_results)
 
     graph.set_entry_point("agent")
-    graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+    graph.add_conditional_edges(
+        "agent",
+        should_continue,
+        {"tools": "tools", "__end__": END},
+    )
     graph.add_edge("tools", "process_results")
     graph.add_edge("process_results", "agent")
 
