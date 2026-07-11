@@ -63,40 +63,72 @@ async def agent_chat(payload: schemas.AgentRequest, db: Session = Depends(get_db
     if result.get("action_taken") == "log_interaction" and result.get("interaction_data"):
         data = result["interaction_data"]
         try:
-            hcp_id = data.get("hcp_id") or payload.hcp_id
-            if hcp_id:
-                enrichment = enrich_interaction(
-                    raw_notes=data.get("raw_notes", ""),
-                    products_discussed=data.get("products_discussed", []),
-                )
-                interaction_date_raw = data.get("interaction_date", datetime.utcnow().isoformat())
-                try:
-                    interaction_date = datetime.fromisoformat(interaction_date_raw)
-                except Exception:
-                    interaction_date = datetime.utcnow()
+            # rep_id: trusted source only, never from the LLM's payload
+            rep_id = payload.rep_id
+            try:
+                rep_id = int(rep_id) if rep_id is not None else None
+            except (ValueError, TypeError):
+                rep_id = None
 
-                db_obj = models.Interaction(
-                    hcp_id=hcp_id,
-                    rep_id=data.get("rep_id"),
-                    interaction_type=data.get("interaction_type", "face_to_face"),
-                    interaction_date=interaction_date,
-                    duration_minutes=data.get("duration_minutes"),
-                    products_discussed=data.get("products_discussed", []),
-                    topics_covered=data.get("topics_covered", []),
-                    raw_notes=data.get("raw_notes", ""),
-                    ai_summary=enrichment["summary"],
-                    ai_extracted_entities=enrichment["entities"],
-                    sentiment_score=enrichment["sentiment_score"],
-                    samples_provided=data.get("samples_provided", []),
-                    objections_raised=data.get("objections_raised", []),
-                    status="completed",
+            # hcp_id: validate it's numeric and actually exists
+            hcp_id = data.get("hcp_id") or payload.hcp_id
+            try:
+                hcp_id = int(hcp_id) if hcp_id is not None else None
+            except (ValueError, TypeError):
+                hcp_id = None
+
+            hcp_obj = db.query(models.HCP).filter(models.HCP.id == hcp_id).first() if hcp_id else None
+
+            if not hcp_obj:
+                logger.error(f"log_interaction failed: hcp_id {hcp_id} not found in hcps table")
+                return schemas.AgentResponse(
+                    message="I couldn't log this — I don't have a valid HCP on file matching that. Could you confirm the doctor's name so I can look them up?",
+                    action_taken="log_interaction_failed",
+                    interaction_data=data,
+                    interaction_id=None,
+                    requires_confirmation=True,
                 )
-                db.add(db_obj)
-                db.commit()
-                db.refresh(db_obj)
-                interaction_id = db_obj.id
+
+            enrichment = enrich_interaction(
+                raw_notes=data.get("raw_notes", ""),
+                products_discussed=data.get("products_discussed", []),
+            )
+            interaction_date_raw = data.get("interaction_date", datetime.utcnow().isoformat())
+            try:
+                interaction_date = datetime.fromisoformat(interaction_date_raw)
+            except Exception:
+                interaction_date = datetime.utcnow()
+
+            db_obj = models.Interaction(
+                hcp_id=hcp_obj.id,
+                rep_id=rep_id,
+                interaction_type=data.get("interaction_type", "face_to_face"),
+                interaction_date=interaction_date,
+                duration_minutes=data.get("duration_minutes"),
+                products_discussed=data.get("products_discussed", []),
+                topics_covered=data.get("topics_covered", []),
+                raw_notes=data.get("raw_notes", ""),
+                ai_summary=enrichment["summary"],
+                ai_extracted_entities=enrichment["entities"],
+                sentiment_score=enrichment["sentiment_score"],
+                samples_provided=data.get("samples_provided", []),
+                objections_raised=data.get("objections_raised", []),
+                status="completed",
+            )
+            db.add(db_obj)
+            db.commit()
+            db.refresh(db_obj)
+            interaction_id = db_obj.id
+
         except Exception as e:
             logger.error(f"DB persist error after agent log_interaction: {e}")
+            return schemas.AgentResponse(
+                message="I tried to log that, but there was an error saving it to the database.",
+                action_taken="log_interaction_failed",
+                interaction_data=data,
+                interaction_id=None,
+                requires_confirmation=True,
+            )
 
     # If agent called edit_interaction tool, update DB
     if result.get("action_taken") == "edit_interaction" and result.get("interaction_data"):

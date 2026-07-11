@@ -110,6 +110,7 @@ class AgentRequest(BaseModel):
     conversation_history: Optional[List[ChatMessage]] = []
     hcp_id: Optional[int] = None
     interaction_id: Optional[int] = None
+    rep_id: Optional[int] = None
 
 
 class AgentResponse(BaseModel):
