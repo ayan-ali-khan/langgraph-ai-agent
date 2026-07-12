@@ -132,6 +132,36 @@
   color: #166534;
 }
 
+/* Pre-fill chip */
+.prefillChip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.prefillIcon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.arrowHint {
+  font-size: 14px;
+  font-weight: 700;
+  margin-left: 2px;
+  color: #7c3aed;
+}
+
 /* Typing indicator */
 .typingRow {
   display: flex;

@@ -322,3 +322,62 @@
   font-size: 13px;
   font-weight: 500;
 }
+
+/* ── AI Pre-fill banner ───────────────────── */
+.aiBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #f5f3ff;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #5b21b6;
+  line-height: 1.4;
+  animation: bannerIn 0.3s ease;
+}
+
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.aiBannerIcon {
+  font-size: 15px;
+  flex-shrink: 0;
+  color: #7c3aed;
+}
+
+.aiBanner span:nth-child(2) { flex: 1; }
+
+.aiBannerDismiss {
+  font-size: 18px;
+  line-height: 1;
+  color: #7c3aed;
+  opacity: 0.6;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: var(--font-family);
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+}
+
+.aiBannerDismiss:hover { opacity: 1; }
+
+/* ── Prefilled field highlight ───────────── */
+.inputPrefilled,
+.selectPrefilled,
+.textareaPrefilled {
+  border-color: #a78bfa !important;
+  background: #faf5ff !important;
+  animation: prefillPulse 1.2s ease forwards;
+}
+
+@keyframes prefillPulse {
+  0%   { box-shadow: 0 0 0 3px rgba(167,139,250,0.4); }
+  60%  { box-shadow: 0 0 0 3px rgba(167,139,250,0.15); }
+  100% { box-shadow: none; }
+}

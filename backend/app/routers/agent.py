@@ -14,7 +14,6 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 def _build_lc_messages(history: list):
-    """Convert chat history schema to LangChain message objects."""
     messages = []
     for msg in history:
         if msg.role == "user":
@@ -24,15 +23,38 @@ def _build_lc_messages(history: list):
     return messages
 
 
+def _resolve_hcp_by_name(db: Session, name: str):
+    """Fuzzy-find an HCP by partial name match."""
+    if not name:
+        return None
+    name_lower = name.lower().strip()
+    hcps = db.query(models.HCP).all()
+    # Exact match first
+    for h in hcps:
+        if h.name.lower() == name_lower:
+            return h
+    # Partial match
+    for h in hcps:
+        if name_lower in h.name.lower() or h.name.lower() in name_lower:
+            return h
+    return None
+
+
 @router.post("/chat", response_model=schemas.AgentResponse)
 async def agent_chat(payload: schemas.AgentRequest, db: Session = Depends(get_db)):
     """
-    Conversational endpoint. Routes user message through the LangGraph agent,
-    which decides whether to call tools (log, edit, search, etc.) or just chat.
+    Conversational chat endpoint.
+
+    When the agent calls log_interaction:
+      - We do NOT auto-save to the DB.
+      - We return prefill_form=True with extracted interaction_data so the
+        frontend can populate the form for the user to review and submit.
+
+    When the agent calls edit_interaction:
+      - We apply the update to an existing saved interaction.
     """
     graph = get_graph()
 
-    # Build initial state
     history_messages = _build_lc_messages(payload.conversation_history or [])
     initial_state: AgentState = {
         "messages": history_messages + [HumanMessage(content=payload.message)],
@@ -51,97 +73,93 @@ async def agent_chat(payload: schemas.AgentRequest, db: Session = Depends(get_db
         logger.error(f"Agent graph error: {e}")
         raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
 
-    # Extract final AI response
+    # Extract the last AI text response
     final_message = ""
     for msg in reversed(result["messages"]):
         if isinstance(msg, AIMessage) and msg.content:
             final_message = msg.content
             break
 
-    # If agent called log_interaction tool, persist the interaction to DB
+    action = result.get("action_taken")
+    raw_data = result.get("interaction_data") or {}
+
+    # ── log_interaction → PRE-FILL FORM, do NOT save ──────────────────────
+    if action == "log_interaction":
+        # Try to resolve the HCP from the data
+        hcp_id = raw_data.get("hcp_id") or payload.hcp_id
+        hcp_obj = None
+
+        # First try by id
+        if hcp_id:
+            try:
+                hcp_obj = db.query(models.HCP).filter(
+                    models.HCP.id == int(hcp_id)
+                ).first()
+            except (ValueError, TypeError):
+                pass
+
+        # If not found by id, try by name extracted in notes/tool payload
+        if not hcp_obj:
+            hcp_name_hint = raw_data.get("hcp_name") or ""
+            # Also scan the user message for a doctor name
+            if not hcp_name_hint:
+                user_msg = payload.message
+                hcp_obj = _resolve_hcp_by_name(db, user_msg)
+            else:
+                hcp_obj = _resolve_hcp_by_name(db, hcp_name_hint)
+
+        # Build a clean prefill payload for the frontend
+        prefill = {
+            "hcp_id": hcp_obj.id if hcp_obj else None,
+            "hcp_name": hcp_obj.name if hcp_obj else None,
+            "interaction_type": raw_data.get("interaction_type", "face_to_face"),
+            "interaction_date": raw_data.get("interaction_date", datetime.utcnow().isoformat()),
+            "duration_minutes": raw_data.get("duration_minutes"),
+            "products_discussed": raw_data.get("products_discussed", []),
+            "topics_covered": raw_data.get("topics_covered", []),
+            "raw_notes": raw_data.get("raw_notes", ""),
+            "next_steps": raw_data.get("next_steps", ""),
+            "samples_provided": raw_data.get("samples_provided", []),
+            "objections_raised": raw_data.get("objections_raised", []),
+        }
+
+        reply = final_message or (
+            f"I've pre-filled the form based on your description"
+            + (f" for {hcp_obj.name}" if hcp_obj else "")
+            + ". Please review the details on the left and click **Log Interaction** to save."
+        )
+
+        return schemas.AgentResponse(
+            message=reply,
+            action_taken="log_interaction",
+            interaction_data=prefill,
+            interaction_id=None,
+            requires_confirmation=False,
+            prefill_form=True,
+        )
+
+    # ── edit_interaction → apply update to DB ─────────────────────────────
     interaction_id = result.get("interaction_id")
-    if result.get("action_taken") == "log_interaction" and result.get("interaction_data"):
-        data = result["interaction_data"]
-        try:
-            # rep_id: trusted source only, never from the LLM's payload
-            rep_id = payload.rep_id
-            try:
-                rep_id = int(rep_id) if rep_id is not None else None
-            except (ValueError, TypeError):
-                rep_id = None
-
-            # hcp_id: validate it's numeric and actually exists
-            hcp_id = data.get("hcp_id") or payload.hcp_id
-            try:
-                hcp_id = int(hcp_id) if hcp_id is not None else None
-            except (ValueError, TypeError):
-                hcp_id = None
-
-            hcp_obj = db.query(models.HCP).filter(models.HCP.id == hcp_id).first() if hcp_id else None
-
-            if not hcp_obj:
-                logger.error(f"log_interaction failed: hcp_id {hcp_id} not found in hcps table")
-                return schemas.AgentResponse(
-                    message="I couldn't log this — I don't have a valid HCP on file matching that. Could you confirm the doctor's name so I can look them up?",
-                    action_taken="log_interaction_failed",
-                    interaction_data=data,
-                    interaction_id=None,
-                    requires_confirmation=True,
-                )
-
-            enrichment = enrich_interaction(
-                raw_notes=data.get("raw_notes", ""),
-                products_discussed=data.get("products_discussed", []),
-            )
-            interaction_date_raw = data.get("interaction_date", datetime.utcnow().isoformat())
-            try:
-                interaction_date = datetime.fromisoformat(interaction_date_raw)
-            except Exception:
-                interaction_date = datetime.utcnow()
-
-            db_obj = models.Interaction(
-                hcp_id=hcp_obj.id,
-                rep_id=rep_id,
-                interaction_type=data.get("interaction_type", "face_to_face"),
-                interaction_date=interaction_date,
-                duration_minutes=data.get("duration_minutes"),
-                products_discussed=data.get("products_discussed", []),
-                topics_covered=data.get("topics_covered", []),
-                raw_notes=data.get("raw_notes", ""),
-                ai_summary=enrichment["summary"],
-                ai_extracted_entities=enrichment["entities"],
-                sentiment_score=enrichment["sentiment_score"],
-                samples_provided=data.get("samples_provided", []),
-                objections_raised=data.get("objections_raised", []),
-                status="completed",
-            )
-            db.add(db_obj)
-            db.commit()
-            db.refresh(db_obj)
-            interaction_id = db_obj.id
-
-        except Exception as e:
-            logger.error(f"DB persist error after agent log_interaction: {e}")
-            return schemas.AgentResponse(
-                message="I tried to log that, but there was an error saving it to the database.",
-                action_taken="log_interaction_failed",
-                interaction_data=data,
-                interaction_id=None,
-                requires_confirmation=True,
-            )
-
-    # If agent called edit_interaction tool, update DB
-    if result.get("action_taken") == "edit_interaction" and result.get("interaction_data"):
+    if action == "edit_interaction" and raw_data:
         iid = result.get("interaction_id") or payload.interaction_id
         if iid:
             try:
-                obj = db.query(models.Interaction).filter(models.Interaction.id == iid).first()
+                obj = db.query(models.Interaction).filter(
+                    models.Interaction.id == int(iid)
+                ).first()
                 if obj:
-                    for k, v in (result["interaction_data"] or {}).items():
-                        setattr(obj, k, v)
-                    if "raw_notes" in (result["interaction_data"] or {}):
+                    allowed = {
+                        "interaction_type", "interaction_date", "duration_minutes",
+                        "products_discussed", "topics_covered", "raw_notes",
+                        "next_steps", "follow_up_date", "samples_provided",
+                        "objections_raised", "status",
+                    }
+                    for k, v in raw_data.items():
+                        if k in allowed:
+                            setattr(obj, k, v)
+                    if "raw_notes" in raw_data:
                         enrichment = enrich_interaction(
-                            raw_notes=result["interaction_data"]["raw_notes"],
+                            raw_notes=raw_data["raw_notes"],
                             products_discussed=obj.products_discussed or [],
                         )
                         obj.ai_summary = enrichment["summary"]
@@ -152,12 +170,13 @@ async def agent_chat(payload: schemas.AgentRequest, db: Session = Depends(get_db
                     db.refresh(obj)
                     interaction_id = obj.id
             except Exception as e:
-                logger.error(f"DB update error after agent edit_interaction: {e}")
+                logger.error(f"edit_interaction DB error: {e}")
 
     return schemas.AgentResponse(
         message=final_message or "Done.",
-        action_taken=result.get("action_taken"),
-        interaction_data=result.get("interaction_data"),
+        action_taken=action,
+        interaction_data=raw_data or None,
         interaction_id=interaction_id,
         requires_confirmation=result.get("requires_confirmation", False),
+        prefill_form=False,
     )

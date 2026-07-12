@@ -40,13 +40,15 @@ const interactionSlice = createSlice({
     selected: null,
     loading: false,
     error: null,
-    formMode: 'create', // 'create' | 'edit'
-    activeTab: 'form',  // 'form' | 'chat'
+    formMode: 'create',  // 'create' | 'edit'
+    activeTab: 'form',   // 'form' | 'chat'
+    prefillData: null,   // data sent from AI to pre-fill the form
   },
   reducers: {
     setSelected(state, action) {
       state.selected = action.payload
       state.formMode = action.payload ? 'edit' : 'create'
+      state.prefillData = null
     },
     setActiveTab(state, action) {
       state.activeTab = action.payload
@@ -54,6 +56,16 @@ const interactionSlice = createSlice({
     clearSelected(state) {
       state.selected = null
       state.formMode = 'create'
+      state.prefillData = null
+    },
+    // Called by AISidePanel when agent returns prefill_form=true
+    prefillForm(state, action) {
+      state.prefillData = action.payload
+      state.formMode = 'create'
+      state.selected = null
+    },
+    clearPrefill(state) {
+      state.prefillData = null
     },
     clearError(state) {
       state.error = null
@@ -86,5 +98,5 @@ const interactionSlice = createSlice({
   },
 })
 
-export const { setSelected, setActiveTab, clearSelected, clearError } = interactionSlice.actions
+export const { setSelected, setActiveTab, clearSelected, clearPrefill, prefillForm, clearError } = interactionSlice.actions
 export default interactionSlice.reducer

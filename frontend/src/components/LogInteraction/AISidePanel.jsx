@@ -1,8 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { sendAgentMessage, addUserMessage, clearChat } from '../../store/agentSlice'
-import { fetchInteractions } from '../../store/interactionSlice'
+import { prefillForm } from '../../store/interactionSlice'
 import styles from './AISidePanel.module.css'
+
+const ACTION_LABELS = {
+  edit_interaction: '✓ Interaction Updated',
+  schedule_follow_up: '📅 Follow-up Scheduled',
+  search_hcp_profile: '🔍 HCP Profile Retrieved',
+  get_sales_insights: '📊 Insights Generated',
+}
 
 export default function AISidePanel() {
   const dispatch = useDispatch()
@@ -11,7 +18,6 @@ export default function AISidePanel() {
   const { selected } = useSelector((s) => s.interactions)
   const [input, setInput] = useState('')
   const endRef = useRef(null)
-  const textareaRef = useRef(null)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -25,13 +31,18 @@ export default function AISidePanel() {
     dispatch(addUserMessage(msg))
     const history = messages.map((m) => ({ role: m.role, content: m.content }))
 
-    await dispatch(sendAgentMessage({
+    const result = await dispatch(sendAgentMessage({
       message: msg,
       conversationHistory: history,
       hcpId: selectedHcpId,
       interactionId: selected?.id,
     }))
-    dispatch(fetchInteractions())
+
+    // If agent wants to pre-fill the form, push the data to the form slice
+    const payload = result?.payload
+    if (payload?.prefill_form && payload?.interaction_data) {
+      dispatch(prefillForm(payload.interaction_data))
+    }
   }
 
   const handleKey = (e) => {
@@ -53,7 +64,11 @@ export default function AISidePanel() {
           </div>
         </div>
         {messages.length > 0 && (
-          <button className={styles.clearBtn} onClick={() => dispatch(clearChat())} title="Clear chat">
+          <button
+            className={styles.clearBtn}
+            onClick={() => dispatch(clearChat())}
+            title="Clear chat"
+          >
             ↺
           </button>
         )}
@@ -61,32 +76,16 @@ export default function AISidePanel() {
 
       {/* Messages */}
       <div className={styles.messages}>
-        {/* Welcome bubble — always shown when empty */}
         {messages.length === 0 && (
           <div className={styles.welcomeBubble}>
-            Log interaction details here (e.g., "Met Dr. Smith, discussed
-            Prodo-X efficacy, positive sentiment, shared brochure") or ask
+            Log interaction details here (e.g., "Met Dr. Sarah Chen, discussed
+            OncoClear efficacy, positive sentiment, shared brochure") or ask
             for help.
           </div>
         )}
 
         {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`${styles.message} ${msg.role === 'user' ? styles.msgUser : styles.msgAssistant}`}
-          >
-            <div className={styles.bubble}>
-              {msg.content}
-            </div>
-            {msg.meta?.action_taken && (
-              <div className={styles.actionChip}>
-                {ACTION_LABELS[msg.meta.action_taken] || msg.meta.action_taken}
-                {msg.meta.interaction_id && (
-                  <span className={styles.idBadge}>#{msg.meta.interaction_id}</span>
-                )}
-              </div>
-            )}
-          </div>
+          <MessageBubble key={idx} msg={msg} />
         ))}
 
         {loading && (
@@ -103,7 +102,6 @@ export default function AISidePanel() {
       {/* Input */}
       <div className={styles.inputArea}>
         <textarea
-          ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
@@ -116,9 +114,11 @@ export default function AISidePanel() {
           className={styles.sendBtn}
           onClick={() => handleSend()}
           disabled={!input.trim() || loading}
-          aria-label="Log"
+          aria-label="Send"
         >
-          {loading ? <span className={styles.spinner} /> : (
+          {loading ? (
+            <span className={styles.spinner} />
+          ) : (
             <>
               <span className={styles.sendIcon}>A</span>
               <span className={styles.sendLabel}>Log</span>
@@ -130,10 +130,38 @@ export default function AISidePanel() {
   )
 }
 
-const ACTION_LABELS = {
-  log_interaction: '✓ Interaction Logged',
-  edit_interaction: '✓ Interaction Updated',
-  schedule_follow_up: '📅 Follow-up Scheduled',
-  search_hcp_profile: '🔍 HCP Profile Retrieved',
-  get_sales_insights: '📊 Insights Generated',
+function MessageBubble({ msg }) {
+  const isUser = msg.role === 'user'
+  const meta = msg.meta || {}
+  const isPrefill = !isUser && meta.action_taken === 'log_interaction' && meta.prefill_form === true
+
+  return (
+    <div className={`${styles.message} ${isUser ? styles.msgUser : styles.msgAssistant}`}>
+      <div
+        className={styles.bubble}
+        dangerouslySetInnerHTML={{
+          __html: msg.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'),
+        }}
+      />
+
+      {/* Pre-fill confirmation chip */}
+      {isPrefill && (
+        <div className={styles.prefillChip}>
+          <span className={styles.prefillIcon}>✦</span>
+          Form pre-filled — review &amp; click <strong>Log Interaction</strong> to save
+          <span className={styles.arrowHint}>←</span>
+        </div>
+      )}
+
+      {/* Other action chips */}
+      {!isUser && !isPrefill && meta.action_taken && ACTION_LABELS[meta.action_taken] && (
+        <div className={styles.actionChip}>
+          {ACTION_LABELS[meta.action_taken]}
+          {meta.interaction_id && (
+            <span className={styles.idBadge}>#{meta.interaction_id}</span>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }

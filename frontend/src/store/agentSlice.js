@@ -52,6 +52,7 @@ const agentSlice = createSlice({
             action_taken: action.payload.action_taken,
             interaction_id: action.payload.interaction_id,
             interaction_data: action.payload.interaction_data,
+            prefill_form: action.payload.prefill_form ?? false,
           },
         })
         state.lastAction = action.payload.action_taken

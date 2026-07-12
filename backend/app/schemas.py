@@ -119,3 +119,4 @@ class AgentResponse(BaseModel):
     interaction_data: Optional[Dict[str, Any]] = None
     interaction_id: Optional[int] = None
     requires_confirmation: bool = False
+    prefill_form: bool = False  # True when agent wants to pre-fill the form

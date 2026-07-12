@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { createInteraction, updateInteraction, clearSelected } from '../../store/interactionSlice'
+import { createInteraction, updateInteraction, clearSelected, clearPrefill } from '../../store/interactionSlice'
 import styles from './InteractionForm.module.css'
 
 const INTERACTION_TYPES = [
@@ -41,11 +41,12 @@ const emptyForm = {
 
 export default function InteractionForm() {
   const dispatch = useDispatch()
-  const { selected, formMode } = useSelector((s) => s.interactions)
+  const { selected, formMode, prefillData } = useSelector((s) => s.interactions)
   const { list: hcps } = useSelector((s) => s.hcps)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [aiFilled, setAiFilled] = useState(false)
   const [materialInput, setMaterialInput] = useState('')
   const [materialsList, setMaterialsList] = useState([])
   const [objectionInput, setObjectionInput] = useState('')
@@ -75,12 +76,61 @@ export default function InteractionForm() {
       const hcp = hcps.find((h) => h.id === selected.hcp_id)
       if (hcp) setHcpSearch(hcp.name)
       setMaterialsList(selected.samples_provided || [])
-    } else {
+      setAiFilled(false)
+    } else if (!prefillData) {
       setForm(emptyForm)
       setHcpSearch('')
       setMaterialsList([])
+      setAiFilled(false)
     }
   }, [selected, formMode, hcps])
+
+  // When the AI sends prefill data, populate the form
+  useEffect(() => {
+    if (!prefillData) return
+
+    const rawDate = prefillData.interaction_date
+    let dateStr = new Date().toISOString().slice(0, 10)
+    let timeStr = new Date().toTimeString().slice(0, 5)
+    if (rawDate) {
+      try {
+        const d = new Date(rawDate)
+        dateStr = d.toISOString().slice(0, 10)
+        timeStr = d.toTimeString().slice(0, 5)
+      } catch (_) {}
+    }
+
+    // Resolve HCP
+    const hcpId = prefillData.hcp_id
+    const hcpName = prefillData.hcp_name || ''
+    const matchedHcp = hcps.find((h) => h.id === hcpId) ||
+                       hcps.find((h) => h.name.toLowerCase().includes(hcpName.toLowerCase()))
+
+    const samples = prefillData.samples_provided || []
+
+    setForm({
+      hcp_id: matchedHcp ? matchedHcp.id : hcpId || '',
+      interaction_type: prefillData.interaction_type || 'face_to_face',
+      interaction_date: dateStr,
+      interaction_time: timeStr,
+      attendees: '',
+      topics_discussed: (prefillData.topics_covered || []).join(', '),
+      products_discussed: prefillData.products_discussed || [],
+      raw_notes: prefillData.raw_notes || '',
+      next_steps: prefillData.next_steps || '',
+      follow_up_date: '',
+      samples_provided: samples,
+      objections_raised: prefillData.objections_raised || [],
+      status: 'completed',
+    })
+
+    setHcpSearch(matchedHcp ? matchedHcp.name : hcpName)
+    setMaterialsList(samples)
+    setAiFilled(true)
+
+    // Scroll form to top so user sees the filled data
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [prefillData, hcps])
 
   const filteredHcps = hcps.filter((h) =>
     h.name.toLowerCase().includes(hcpSearch.toLowerCase())
@@ -161,6 +211,8 @@ export default function InteractionForm() {
         await dispatch(createInteraction(payload)).unwrap()
       }
       setSuccess(true)
+      setAiFilled(false)
+      dispatch(clearPrefill())
       if (formMode === 'create') {
         setForm(emptyForm)
         setHcpSearch('')
@@ -177,6 +229,22 @@ export default function InteractionForm() {
   return (
     <form className={styles.form} onSubmit={handleSubmit} noValidate>
 
+      {/* AI Pre-fill banner */}
+      {aiFilled && (
+        <div className={styles.aiBanner}>
+          <span className={styles.aiBannerIcon}>✦</span>
+          <span>Form pre-filled by AI — review the details below and click <strong>Log Interaction</strong> to save.</span>
+          <button
+            type="button"
+            className={styles.aiBannerDismiss}
+            onClick={() => { setAiFilled(false); dispatch(clearPrefill()) }}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Section: Interaction Details */}
       <div className={styles.sectionLabel}>Interaction Details</div>
 
@@ -191,7 +259,7 @@ export default function InteractionForm() {
               onChange={(e) => { setHcpSearch(e.target.value); setShowHcpDropdown(true) }}
               onFocus={() => setShowHcpDropdown(true)}
               onBlur={() => setTimeout(() => setShowHcpDropdown(false), 150)}
-              className={styles.input}
+              className={`${styles.input} ${aiFilled && form.hcp_id ? styles.inputPrefilled : ''}`}
               placeholder="Search or select HCP..."
               autoComplete="off"
             />
@@ -219,7 +287,7 @@ export default function InteractionForm() {
             name="interaction_type"
             value={form.interaction_type}
             onChange={handleChange}
-            className={styles.select}
+            className={`${styles.select} ${aiFilled ? styles.selectPrefilled : ''}`}
           >
             {INTERACTION_TYPES.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
@@ -272,7 +340,7 @@ export default function InteractionForm() {
           name="topics_discussed"
           value={form.topics_discussed}
           onChange={handleChange}
-          className={styles.textarea}
+          className={`${styles.textarea} ${aiFilled && form.topics_discussed ? styles.textareaPrefilled : ''}`}
           rows={4}
           placeholder="Enter key discussion points..."
         />
@@ -365,7 +433,7 @@ export default function InteractionForm() {
           name="raw_notes"
           value={form.raw_notes}
           onChange={handleChange}
-          className={styles.textarea}
+          className={`${styles.textarea} ${aiFilled && form.raw_notes ? styles.textareaPrefilled : ''}`}
           rows={4}
           placeholder="Additional notes about the interaction..."
         />
